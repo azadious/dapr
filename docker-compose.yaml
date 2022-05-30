@@ -1,0 +1,110 @@
+version: "3"
+services:
+    ############################
+    # Node app + Dapr sidecar
+    ############################
+    nodeapp:
+        build: 
+          context: ./nodeapp
+          dockerfile: ./develop/Dockerfile
+        ports:
+            - "50002:50002"
+            - "3000:3000"
+        command: sh -c "npm install && node app.js"
+        volumes:
+            - ./nodeapp/source:/node/app
+        depends_on:
+            - redis
+            - placement
+        networks:
+            - dapr
+    nodeapp-dapr:
+        image: "daprio/daprd:edge"
+        command:
+            [
+                "./daprd",
+                "-app-id",
+                "nodeapp",
+                "-app-port",
+                "3000",
+                "-placement-host-address",
+                "placement:50006",
+                "-dapr-grpc-port",
+                "50002",
+                "-components-path",
+                "/components",
+            ]
+        volumes:
+            - "./dapr-components/:/components"
+        depends_on:
+            - nodeapp
+        network_mode: "service:nodeapp"
+    ############################
+    # Python app + Dapr sidecar
+    ############################
+    pythonapp:
+        build: 
+          context: ./python
+          dockerfile: ./develop/Dockerfile
+        depends_on:
+            - redis
+            - placement
+        user: "1000"
+        command: python app.py
+        volumes:
+            - ./python/source:/home/app
+        networks:
+            - dapr
+    pythonapp-dapr:
+        image: "daprio/daprd:edge"
+        command:
+            [
+                "./daprd",
+                "-app-id",
+                "pythonapp",
+                "-placement-host-address",
+                "placement:50006",
+                "-dapr-grpc-port",
+                "50002",
+                "-components-path",
+                "/components",
+            ]
+            # [
+            #     "./daprd",
+            #     "-app-id",
+            #     "pythonapp",
+            #     "-app-port",
+            #     "3000",
+            #     "-placement-host-address",
+            #     "placement:50006",
+            #     "-dapr-grpc-port",
+            #     "50002",
+            #     "-components-path",
+            #     "/components",
+            # ]
+        volumes:
+            - "./dapr-components/:/components"
+        depends_on:
+            - pythonapp
+        network_mode: "service:pythonapp"
+    ############################
+    # Dapr placement service
+    ############################
+    placement:
+        image: "daprio/dapr"
+        command: ["./placement", "-port", "50006"]
+        ports:
+            - "50006:50006"
+        networks:
+            - dapr
+    ############################
+    # Redis state store
+    ############################
+    redis:
+        image: "redis:alpine"
+        ports:
+            - "6380:6379"
+        networks:
+            - dapr
+networks:
+    dapr:
